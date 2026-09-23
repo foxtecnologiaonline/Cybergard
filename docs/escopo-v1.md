@@ -59,6 +59,17 @@ Horário comercial é por tenant (fuso e janela configuráveis), avaliado no fus
 - Retenção: log bruto 30 dias (minimização), alerta 365 dias (sustenta a revisão mensal). Configurável.
 - Direito de esquecimento: `POST /api/tenants/:id/exclusao` marca o tenant e apaga tudo em até 24h, com a prova da exclusão preservada na auditoria.
 
+## Autenticação e acesso
+
+- Login por sessão (cookie HMAC-SHA256, `SESSION_SECRET`), sem dependência externa. Não há cadastro público: o primeiro usuário de cada tenant é criado por quem opera o Cybergard (`npm run criar-usuario`).
+- `src/middleware.ts` bloqueia toda rota por padrão; a lista de exceções (login, ingestão por token de fonte, webhook da Meta, health, link de alerta) é explícita.
+- O link de alerta enviado por WhatsApp carrega um token assinado próprio (`src/lib/link-alerta.ts`), válido por 14 dias, para abrir sem exigir login no celular — sem ele, só quem está logado no tenant certo vê o alerta.
+- Exclusão de tenant (LGPD) exige papel `admin` e só pode ser solicitada pelo próprio tenant da sessão.
+
+## Confirmação de entrega
+
+`POST /api/webhooks/whatsapp` recebe o status real de cada mensagem (enviada/entregue/lida/falha) da Meta, valida a assinatura `X-Hub-Signature-256` com `WHATSAPP_APP_SECRET`, e atualiza `notificacoes.status` — hoje o critério de aceite de latência mede detecção→envio; com o webhook dá pra saber também se a mensagem foi de fato entregue e lida, útil pra investigar reclamação de "não recebi o alerta".
+
 ## Provisionamento pendente (fora do código)
 
 1. **Azure**: app registration (client credentials), Data Collection Endpoint + Data Collection Rule com o stream `Custom-CybergardLogs_CL`, workspace com Sentinel habilitado, recurso do Anomaly Detector.

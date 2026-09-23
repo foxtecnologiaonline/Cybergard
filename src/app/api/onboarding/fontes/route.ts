@@ -1,46 +1,46 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { criarFonteLog, listarFontes } from "@/repositories/fontes-log";
-import { buscarTenant, registrarAuditoria } from "@/repositories/tenants";
+import { registrarAuditoria } from "@/repositories/tenants";
+import { obterSessao } from "@/lib/session";
 import { env } from "@/lib/env";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const criarSchema = z.object({
-  tenantId: z.string().uuid(),
   tipo: z.enum(["painel_admin", "email_corporativo", "webhook_generico"]),
   nome: z.string().min(1).max(120),
   credenciais: z.record(z.string()).optional(),
 });
 
-export async function GET(request: Request): Promise<NextResponse> {
-  const tenantId = new URL(request.url).searchParams.get("tenantId");
-  if (!tenantId) return NextResponse.json({ erro: "tenantId obrigatório" }, { status: 400 });
-  return NextResponse.json({ fontes: await listarFontes(tenantId) });
+export async function GET(): Promise<NextResponse> {
+  const sessao = await obterSessao();
+  if (!sessao) return NextResponse.json({ erro: "não autenticado" }, { status: 401 });
+  return NextResponse.json({ fontes: await listarFontes(sessao.tenantId) });
 }
 
-/** Conecta uma fonte de log do tenant. O token de ingestão é devolvido uma única vez. */
+/** Conecta uma fonte de log do tenant logado. O token de ingestão é devolvido uma única vez. */
 export async function POST(request: Request): Promise<NextResponse> {
+  const sessao = await obterSessao();
+  if (!sessao) return NextResponse.json({ erro: "não autenticado" }, { status: 401 });
+
   const parsed = criarSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ erro: "dados inválidos", detalhes: parsed.error.flatten() }, { status: 422 });
   }
 
-  const tenant = await buscarTenant(parsed.data.tenantId);
-  if (!tenant) return NextResponse.json({ erro: "tenant não encontrado" }, { status: 404 });
-
   const { fonte, tokenIngest } = await criarFonteLog({
-    tenantId: parsed.data.tenantId,
+    tenantId: sessao.tenantId,
     tipo: parsed.data.tipo,
     nome: parsed.data.nome,
     credenciais: parsed.data.credenciais ?? null,
   });
 
   await registrarAuditoria({
-    tenantId: parsed.data.tenantId,
+    tenantId: sessao.tenantId,
     acao: "onboarding.fonte_conectada",
-    ator: request.headers.get("x-usuario") ?? "nao_identificado",
+    ator: sessao.usuarioId,
     detalhes: { fonteId: fonte.id, tipo: fonte.tipo },
   });
 

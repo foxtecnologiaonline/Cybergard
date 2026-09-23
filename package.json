@@ -10,6 +10,7 @@
     "worker": "tsx src/worker.ts",
     "worker:dev": "tsx watch src/worker.ts",
     "migrate": "tsx scripts/migrate.ts",
+    "criar-usuario": "tsx scripts/criar-usuario.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"

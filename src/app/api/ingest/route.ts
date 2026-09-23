@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { ingerirLote, loteSchema, LoteMuitoGrandeError } from "@/services/ingestao";
 import { logger } from "@/lib/logger";
+import { hashIngestToken } from "@/lib/crypto";
+import { limiteExcedido } from "@/lib/rate-limit";
+import { env } from "@/lib/env";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,6 +14,11 @@ export async function POST(request: Request): Promise<NextResponse> {
   const token = auth?.startsWith("Bearer ") ? auth.slice(7).trim() : null;
   if (!token) {
     return NextResponse.json({ erro: "token de ingestão ausente" }, { status: 401 });
+  }
+
+  // Por fonte (hash do token), não por IP — uma fonte com defeito não pode afogar a ingestão nem inflar o custo do Sentinel.
+  if (await limiteExcedido(`ingest:${hashIngestToken(token)}`, env().INGEST_RATE_LIMIT_PER_MINUTE)) {
+    return NextResponse.json({ erro: "limite de requisições excedido, tente novamente em instantes" }, { status: 429 });
   }
 
   let corpo: unknown;

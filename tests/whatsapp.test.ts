@@ -5,6 +5,7 @@ beforeAll(() => {
   process.env.DATABASE_URL ??= "postgres://localhost/test";
   process.env.REDIS_URL ??= "redis://localhost:6379";
   process.env.CREDENTIALS_ENCRYPTION_KEY ??= Buffer.alloc(32, 7).toString("base64");
+  process.env.SESSION_SECRET ??= Buffer.alloc(32, 9).toString("base64");
 });
 
 describe("mensagem de alerta no WhatsApp", () => {

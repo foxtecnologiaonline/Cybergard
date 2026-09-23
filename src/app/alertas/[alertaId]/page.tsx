@@ -1,5 +1,7 @@
 import { notFound } from "next/navigation";
 import { queryOne } from "@/lib/db";
+import { verificarTokenAlerta } from "@/lib/link-alerta";
+import { obterSessao } from "@/lib/session";
 import type { Alerta, Severidade } from "@/domain/types";
 
 export const dynamic = "force-dynamic";
@@ -10,11 +12,25 @@ const ROTULO: Record<Severidade, string> = {
   informativo: "Informativo",
 };
 
-export default async function DetalheAlerta({ params }: { params: Promise<{ alertaId: string }> }) {
+export default async function DetalheAlerta({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ alertaId: string }>;
+  searchParams: Promise<{ t?: string }>;
+}) {
   const { alertaId } = await params;
-  // O link do WhatsApp chega sem tenant; o id do alerta já é único e não enumerável.
+  const { t } = await searchParams;
+
   const alerta = await queryOne<Alerta>(`SELECT * FROM alertas WHERE id = $1`, [alertaId]);
   if (!alerta) notFound();
+
+  // Duas portas de entrada: o link assinado do WhatsApp, ou uma sessão logada do mesmo tenant.
+  const tokenValido = verificarTokenAlerta(alertaId, t ?? null);
+  if (!tokenValido) {
+    const sessao = await obterSessao();
+    if (!sessao || sessao.tenantId !== alerta.tenant_id) notFound();
+  }
 
   const quando = new Intl.DateTimeFormat("pt-BR", { dateStyle: "full", timeStyle: "short" }).format(
     new Date(alerta.detectado_em),

@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: cybergard
+          POSTGRES_PASSWORD: cybergard
+          POSTGRES_DB: cybergard
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U cybergard"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://cybergard:cybergard@localhost:5432/cybergard
+      REDIS_URL: redis://localhost:6379
+      # Chaves fixas só pra CI (32 bytes válidos) — nunca as reais, que ficam em secret do ambiente de produção.
+      CREDENTIALS_ENCRYPTION_KEY: XN6vyJwL2c67Nzc5jIJFBOuKxz2ZnPezC0vUWxR/JIE=
+      SESSION_SECRET: 9LP6a+KTtqf5PVfbIuhB81M/J+1vbZeodTRFmCaxZiw=
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      - name: Aplicar migrations
+        run: npx tsx scripts/migrate.ts
+
+      - name: Testes (unitários + integração)
+        run: npm test
+        env:
+          TEST_DATABASE_URL: postgres://cybergard:cybergard@localhost:5432/cybergard
+          TEST_REDIS_URL: redis://localhost:6379
+
+      - name: Build de produção
+        run: npm run build

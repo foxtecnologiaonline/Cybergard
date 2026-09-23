@@ -1,5 +1,8 @@
-import { listarTenantsAtivos } from "@/repositories/tenants";
+import { redirect } from "next/navigation";
+import { buscarTenant } from "@/repositories/tenants";
 import { listarAlertas, resumoMensal } from "@/repositories/alertas";
+import { obterSessao } from "@/lib/session";
+import { RevisarAlerta } from "./components/revisar-alerta";
 import type { Alerta, Severidade } from "@/domain/types";
 
 export const dynamic = "force-dynamic";
@@ -15,20 +18,12 @@ function formatar(data: Date): string {
 }
 
 export default async function Painel() {
-  const tenants = await listarTenantsAtivos();
-  const tenant = tenants[0];
+  // O middleware já bloqueia acesso sem sessão; a checagem aqui é defesa em profundidade.
+  const sessao = await obterSessao();
+  if (!sessao) redirect("/login");
 
-  if (!tenant) {
-    return (
-      <>
-        <h1>Nenhuma empresa conectada</h1>
-        <p className="vazio">
-          Cadastre um tenant e conecte a primeira fonte de log em <code>POST /api/onboarding/fontes</code> para começar
-          a receber alertas.
-        </p>
-      </>
-    );
-  }
+  const tenant = await buscarTenant(sessao.tenantId);
+  if (!tenant) redirect("/login");
 
   const inicioDoMes = new Date();
   inicioDoMes.setDate(1);
@@ -76,6 +71,7 @@ export default async function Painel() {
               <h2 style={{ fontSize: 16, margin: "8px 0 4px" }}>{alerta.titulo}</h2>
               <p style={{ margin: 0, color: "var(--texto-suave)", fontSize: 14 }}>{alerta.descricao}</p>
               <p className="acao">{alerta.acao_recomendada}</p>
+              <RevisarAlerta alertaId={alerta.id} revisado={alerta.falso_positivo} />
             </article>
           ))
         )}

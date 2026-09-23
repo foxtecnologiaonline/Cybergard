@@ -1,6 +1,6 @@
 import { Worker, type Job } from "bullmq";
 import { env } from "@/lib/env";
-import { redis, closeRedis } from "@/lib/redis";
+import { criarConexaoWorker, closeRedis } from "@/lib/redis";
 import { closeDb } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import {
@@ -15,6 +15,7 @@ import { pollSentinel, scanAnomalia } from "@/services/deteccao";
 import { notificarAlerta } from "@/services/notificacao";
 import { aplicarRetencao, executarExclusoesPendentes } from "@/services/lgpd";
 import { listarTenantsAtivos } from "@/repositories/tenants";
+import { registrarPulso } from "@/lib/heartbeat";
 import type { MetricaAcesso } from "@/domain/types";
 
 const METRICAS: MetricaAcesso[] = ["logins", "requisicoes", "falhas_login"];
@@ -60,14 +61,15 @@ async function main(): Promise<void> {
       if (job.data.tipo === "poll_sentinel") return pollSentinel(job.data.tenantId);
       return scanAnomalia({ tenantId: job.data.tenantId, metrica: job.data.metrica });
     },
-    { connection: redis(), concurrency: CONCORRENCIA_DETECCAO },
+    // Conexão própria: Worker usa comando bloqueante, não pode dividir conexão com a Queue nem com outro Worker.
+    { connection: criarConexaoWorker(), concurrency: CONCORRENCIA_DETECCAO },
   );
 
   const workerNotificacao = new Worker<JobNotificacao>(
     FILA_NOTIFICACAO,
     async (job: Job<JobNotificacao>) =>
       notificarAlerta({ tenantId: job.data.tenantId, alertaId: job.data.alertaId }),
-    { connection: redis(), concurrency: CONCORRENCIA_NOTIFICACAO },
+    { connection: criarConexaoWorker(), concurrency: CONCORRENCIA_NOTIFICACAO },
   );
 
   for (const worker of [workerDeteccao, workerNotificacao]) {
@@ -86,8 +88,11 @@ async function main(): Promise<void> {
         ),
       60 * 60 * 1000,
     ),
+    // /api/health depende disso pra saber se o worker está vivo sem esperar o cliente reclamar.
+    setInterval(() => void registrarPulso().catch((e) => logger.error("falha ao registrar pulso", { error: String(e) })), config.WORKER_HEARTBEAT_INTERVAL_MS),
   ];
 
+  await registrarPulso();
   await agendarCiclo();
   logger.info("worker do Cybergard no ar", {
     pollMs: config.SENTINEL_POLL_INTERVAL_MS,

@@ -11,6 +11,7 @@ export async function prepararAmbiente(): Promise<Stub> {
   process.env.DATABASE_URL = process.env.TEST_DATABASE_URL ?? "postgres://cybergard:cybergard@127.0.0.1:5432/cybergard";
   process.env.REDIS_URL = process.env.TEST_REDIS_URL ?? "redis://127.0.0.1:6379";
   process.env.CREDENTIALS_ENCRYPTION_KEY = randomBytes(32).toString("base64");
+  process.env.SESSION_SECRET = randomBytes(32).toString("base64");
   process.env.LOG_LEVEL = "error";
 
   process.env.AZURE_LOGIN_ENDPOINT = stub.baseUrl;
@@ -34,6 +35,8 @@ export async function prepararAmbiente(): Promise<Stub> {
 
   process.env.WHATSAPP_PHONE_NUMBER_ID = "1234567890";
   process.env.WHATSAPP_ACCESS_TOKEN = "token-meta-teste";
+  process.env.WHATSAPP_APP_SECRET = "segredo-app-teste";
+  process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN = "verify-teste";
   process.env.APP_BASE_URL = "http://localhost:3000";
 
   return stub;

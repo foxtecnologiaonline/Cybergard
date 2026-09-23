@@ -4,6 +4,7 @@ import { buscarAlerta, marcarAlertaNotificado, registrarNotificacao } from "@/re
 import { destinatariosPara } from "@/repositories/tenants";
 import { enviarAlerta } from "@/whatsapp/client";
 import { dentroDoSla } from "@/severity/classificar";
+import { gerarTokenAlerta } from "@/lib/link-alerta";
 
 export interface ResultadoNotificacao {
   enviadas: number;
@@ -26,7 +27,7 @@ export async function notificarAlerta(input: { tenantId: string; alertaId: strin
     return { enviadas: 0, falhas: 0, latenciaMs: null, dentroDoSla: true };
   }
 
-  const urlAlerta = `${env().APP_BASE_URL}/alertas/${alerta.id}`;
+  const urlAlerta = `${env().APP_BASE_URL}/alertas/${alerta.id}?t=${gerarTokenAlerta(alerta.id)}`;
   let enviadas = 0;
   let falhas = 0;
   let ultimoErro: unknown = null;

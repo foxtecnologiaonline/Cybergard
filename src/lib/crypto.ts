@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, randomBytes, timingSafeEqual, createHash } from "node:crypto";
+import { createCipheriv, createDecipheriv, randomBytes, timingSafeEqual, createHash, createHmac, scryptSync } from "node:crypto";
 import { env } from "./env";
 
 const ALGORITHM = "aes-256-gcm";
@@ -41,4 +41,37 @@ export function safeEquals(a: string, b: string): boolean {
   const bufB = Buffer.from(b);
   if (bufA.length !== bufB.length) return false;
   return timingSafeEqual(bufA, bufB);
+}
+
+const SCRYPT_KEYLEN = 64;
+
+/** Hash de senha com scrypt (nativo do Node, sem dependência extra). Formato: salt.hash (base64). */
+export function hashSenha(senha: string): string {
+  const salt = randomBytes(16);
+  const derivada = scryptSync(senha, salt, SCRYPT_KEYLEN);
+  return `${salt.toString("base64")}.${derivada.toString("base64")}`;
+}
+
+export function verificarSenha(senha: string, hash: string): boolean {
+  const [saltB64, hashB64] = hash.split(".");
+  if (!saltB64 || !hashB64) return false;
+  const salt = Buffer.from(saltB64, "base64");
+  const esperada = Buffer.from(hashB64, "base64");
+  const derivada = scryptSync(senha, salt, SCRYPT_KEYLEN);
+  if (derivada.length !== esperada.length) return false;
+  return timingSafeEqual(derivada, esperada);
+}
+
+function chaveSessao(): Buffer {
+  return Buffer.from(env().SESSION_SECRET, "base64");
+}
+
+/** Assina um payload com HMAC-SHA256. Usado por sessão de login e pelo link assinado do alerta. */
+export function assinarHmac(payload: string): string {
+  return createHmac("sha256", chaveSessao()).update(payload).digest("base64url");
+}
+
+export function verificarHmac(payload: string, assinatura: string): boolean {
+  const esperada = assinarHmac(payload);
+  return safeEquals(esperada, assinatura);
 }

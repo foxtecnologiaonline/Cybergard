@@ -13,11 +13,12 @@ Engenheiro sênior full-stack (Tech Lead/Arquiteto de Soluções). Leva qualquer
 - Toda chamada externa passa por `src/lib/http.ts` (timeout, retry com backoff, log estruturado) — não usar `fetch` direto.
 - Toda consulta a dado de tenant recebe `tenant_id` explícito; nada de query sem escopo.
 - Migration é arquivo novo em `db/migrations/`, numerado e imutável depois de aplicado.
+- BullMQ `Worker` nunca compartilha conexão Redis com uma `Queue` ou outro `Worker` — sempre `criarConexaoWorker()` (`src/lib/redis.ts`), nunca `redis()`. `Worker` usa comando bloqueante; dividir conexão é o tipo de bug que só aparece sob concorrência.
 - Commits em português, no imperativo (`adiciona`, `ajusta`, `corrige`).
 
-**Deploy alvo:** ainda não definido (app + worker são processos separados; `npm run build` e `npm run worker`).
+**Deploy alvo:** Docker (`Dockerfile` com alvos `app`/`worker`/`migrate`, `docker-compose.yml`). App e worker são processos separados — nunca rodar a lógica do worker dentro do processo do Next.js.
 
-**Segredos/env:** tudo em variável de ambiente, nunca no repositório — ver `.env.example`. Credencial de fonte de log é cifrada em AES-256-GCM antes de persistir; token de ingestão só como hash. Não commitar dado real de cliente (log, telefone, nome de empresa) nem em teste ou exemplo.
+**Segredos/env:** tudo em variável de ambiente, nunca no repositório — ver `.env.example`. Credencial de fonte de log é cifrada em AES-256-GCM antes de persistir; token de ingestão só como hash; sessão de login é cookie assinado por HMAC (`SESSION_SECRET`), sem estado no servidor (logout não revoga um cookie já emitido antes de expirar — aceito pra v1 de piloto único). Não commitar dado real de cliente (log, telefone, nome de empresa) nem em teste ou exemplo.
 
 **Linha vermelha (sempre exige confirmação do usuário):**
 - Adicionar qualquer contenção automática de incidente (isolar conta, bloquear IP, derrubar sessão) — o v1 é deliberadamente só alerta; a decisão de agir é humana.

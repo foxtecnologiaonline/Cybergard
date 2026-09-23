@@ -4,8 +4,10 @@ const schema = z.object({
   DATABASE_URL: z.string().min(1),
   REDIS_URL: z.string().min(1),
   CREDENTIALS_ENCRYPTION_KEY: z.string().min(1),
+  SESSION_SECRET: z.string().min(1),
 
   INGEST_MAX_BATCH: z.coerce.number().int().positive().default(500),
+  INGEST_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(120),
 
   AZURE_TENANT_ID: z.string().default(""),
   AZURE_CLIENT_ID: z.string().default(""),
@@ -27,11 +29,15 @@ const schema = z.object({
   WHATSAPP_ACCESS_TOKEN: z.string().default(""),
   WHATSAPP_TEMPLATE_NAME: z.string().default("cybergard_alerta"),
   WHATSAPP_TEMPLATE_LANGUAGE: z.string().default("pt_BR"),
+  // Verificação do webhook de status (GET) e validação de assinatura do payload (POST).
+  WHATSAPP_WEBHOOK_VERIFY_TOKEN: z.string().default(""),
+  WHATSAPP_APP_SECRET: z.string().default(""),
 
   RAW_LOG_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
   ALERT_RETENTION_DAYS: z.coerce.number().int().positive().default(365),
   SENTINEL_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(60_000),
   ANOMALY_SCAN_INTERVAL_MS: z.coerce.number().int().positive().default(300_000),
+  WORKER_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().positive().default(30_000),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
 
   APP_BASE_URL: z.string().default("http://localhost:3000"),

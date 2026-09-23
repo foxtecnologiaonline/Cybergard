@@ -15,6 +15,10 @@ let deteccao: typeof import("@/services/deteccao");
 let notificacao: typeof import("@/services/notificacao");
 let lgpd: typeof import("@/services/lgpd");
 let filas: typeof import("@/queues");
+let rateLimit: typeof import("@/lib/rate-limit");
+let heartbeat: typeof import("@/lib/heartbeat");
+let usuarios: typeof import("@/repositories/usuarios");
+let webhook: typeof import("@/whatsapp/webhook");
 
 beforeAll(async () => {
   stub = await prepararAmbiente();
@@ -29,6 +33,10 @@ beforeAll(async () => {
   notificacao = await import("@/services/notificacao");
   lgpd = await import("@/services/lgpd");
   filas = await import("@/queues");
+  rateLimit = await import("@/lib/rate-limit");
+  heartbeat = await import("@/lib/heartbeat");
+  usuarios = await import("@/repositories/usuarios");
+  webhook = await import("@/whatsapp/webhook");
 });
 
 afterAll(async () => {
@@ -287,12 +295,14 @@ describe("prioridade da fila em pico de volume", () => {
     // Só agora sobe o consumidor: com a fila já cheia, o primeiro puxado revela a prioridade real.
     const { Worker } = await import("bullmq");
     const processados: string[] = [];
+    const conexaoWorker = redisLib.criarConexaoWorker();
     const worker = new Worker(
       filas.FILA_NOTIFICACAO,
       async (job) => {
         processados.push(job.data.severidade as string);
       },
-      { connection: redisLib.redis(), concurrency: 1 },
+      // Conexão dedicada — compartilhar com a Queue (que usa redis()) reintroduz a mesma race que isso testa.
+      { connection: conexaoWorker, concurrency: 1 },
     );
 
     await new Promise<void>((resolve) => {
@@ -301,6 +311,7 @@ describe("prioridade da fila em pico de volume", () => {
       });
     });
     await worker.close();
+    // Não fecha conexaoWorker aqui: fica em conexoesDedicadas e o afterAll fecha via closeRedis().
 
     expect(processados[0]).toBe("critico");
     await fila.obliterate({ force: true });
@@ -355,5 +366,128 @@ describe("LGPD", () => {
     );
     expect(rows[0]?.credenciais_cifradas).not.toContain("segredo-do-cliente");
     expect(rows[0]?.credenciais_cifradas?.split(".")).toHaveLength(3);
+  });
+});
+
+describe("autenticação de usuário", () => {
+  it("cria usuário e autentica com a senha correta", async () => {
+    const tenant = await criarTenantComDestinatario();
+    const usuario = await usuarios.criarUsuario({
+      tenantId: tenant.id,
+      email: "dono@padaria.com",
+      senha: "senha-forte-123",
+    });
+    expect(usuario.tenant_id).toBe(tenant.id);
+
+    const paraLogin = await usuarios.buscarUsuarioParaLogin("dono@padaria.com");
+    expect(paraLogin).not.toBeNull();
+
+    const { verificarSenha } = await import("@/lib/crypto");
+    expect(verificarSenha("senha-forte-123", paraLogin!.senha_hash)).toBe(true);
+    expect(verificarSenha("senha-errada", paraLogin!.senha_hash)).toBe(false);
+  });
+
+  it("e-mail é case-insensitive (citext)", async () => {
+    const tenant = await criarTenantComDestinatario();
+    await usuarios.criarUsuario({ tenantId: tenant.id, email: "Dono@Padaria.com", senha: "senha-forte-123" });
+    expect(await usuarios.buscarUsuarioParaLogin("dono@padaria.com")).not.toBeNull();
+  });
+});
+
+describe("rate limit de ingestão", () => {
+  it("bloqueia a partir do limite configurado na janela", async () => {
+    const chave = `teste-${Date.now()}`;
+    for (let i = 0; i < 3; i++) {
+      expect(await rateLimit.limiteExcedido(chave, 3)).toBe(false);
+    }
+    expect(await rateLimit.limiteExcedido(chave, 3)).toBe(true);
+  });
+
+  it("não confunde fontes diferentes", async () => {
+    const chaveA = `fonte-a-${Date.now()}`;
+    const chaveB = `fonte-b-${Date.now()}`;
+    await rateLimit.limiteExcedido(chaveA, 1);
+    expect(await rateLimit.limiteExcedido(chaveA, 1)).toBe(true);
+    expect(await rateLimit.limiteExcedido(chaveB, 1)).toBe(false);
+  });
+});
+
+describe("heartbeat do worker", () => {
+  it("reporta vivo logo após o pulso e morto sem nenhum pulso", async () => {
+    await redisLib.redis().del("cybergard:worker:heartbeat");
+
+    expect((await heartbeat.statusWorker(1000)).vivo).toBe(false);
+
+    await heartbeat.registrarPulso();
+    const status = await heartbeat.statusWorker(1000);
+    expect(status.vivo).toBe(true);
+    expect(status.ultimoPulsoHaMs).not.toBeNull();
+    expect(status.ultimoPulsoHaMs!).toBeLessThan(1000);
+  });
+});
+
+describe("webhook de status da Meta", () => {
+  it("atualiza o status da notificação pelo message_id", async () => {
+    const tenant = await criarTenantComDestinatario();
+    const { alerta } = await alertas.salvarAlerta({
+      tenantId: tenant.id,
+      origem: "sentinel",
+      chaveExterna: "inc-webhook",
+      titulo: "Teste webhook",
+      descricao: "",
+      severidade: "critico",
+      severidadeOrigem: "High",
+      acaoRecomendada: "Verifique.",
+      detectadoEm: new Date(),
+      metadados: {},
+    });
+    const [destinatario] = await tenants.destinatariosPara(tenant.id, "critico");
+    await alertas.registrarNotificacao({
+      tenantId: tenant.id,
+      alertaId: alerta.id,
+      destinatarioId: destinatario!.id,
+      status: "enviada",
+      messageId: "wamid.teste-123",
+    });
+
+    const aplicados = await webhook.processarStatusWebhook({
+      entry: [
+        {
+          changes: [
+            {
+              value: {
+                statuses: [
+                  { id: "wamid.teste-123", status: "delivered", timestamp: String(Math.floor(Date.now() / 1000)) },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    expect(aplicados).toBe(1);
+
+    const linhas = await db.query<{ status: string; entregue_em: Date | null }>(
+      "SELECT status, entregue_em FROM notificacoes WHERE message_id = $1",
+      ["wamid.teste-123"],
+    );
+    expect(linhas[0]?.status).toBe("entregue");
+    expect(linhas[0]?.entregue_em).not.toBeNull();
+  });
+
+  it("ignora id de mensagem desconhecido sem quebrar", async () => {
+    const aplicados = await webhook.processarStatusWebhook({
+      entry: [{ changes: [{ value: { statuses: [{ id: "wamid.nao-existe", status: "read", timestamp: "0" }] } }] }],
+    });
+    expect(aplicados).toBe(0);
+  });
+
+  it("valida a assinatura HMAC do corpo recebido", async () => {
+    const { createHmac } = await import("node:crypto");
+    const corpo = JSON.stringify({ entry: [] });
+    const assinaturaCorreta = `sha256=${createHmac("sha256", "segredo-app-teste").update(corpo).digest("hex")}`;
+
+    expect(webhook.verificarAssinaturaMeta(corpo, assinaturaCorreta)).toBe(true);
+    expect(webhook.verificarAssinaturaMeta(corpo, "sha256=0000")).toBe(false);
   });
 });
