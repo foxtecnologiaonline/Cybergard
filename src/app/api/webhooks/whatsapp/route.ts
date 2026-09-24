@@ -35,7 +35,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({ erro: "JSON inválido" }, { status: 400 });
   }
 
-  await processarStatusWebhook(payload as Parameters<typeof processarStatusWebhook>[0]);
+  await processarStatusWebhook(payload);
   // A Meta reenvia em retry se não receber 200 rápido — confirmar mesmo se algum id não bateu.
   return NextResponse.json({ status: "ok" });
 }

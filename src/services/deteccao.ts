@@ -19,7 +19,12 @@ const PONTOS_DA_SERIE = 168;
 
 /**
  * Lê incidentes novos do Sentinel, classifica e enfileira notificação.
- * O cursor só avança depois do alerta persistido, então uma falha reprocessa em vez de perder.
+ *
+ * O cursor só avança depois do enfileiramento confirmado, não só depois do alerta
+ * persistido: se falhar entre salvar o alerta e enfileirar (ex.: Redis fora do ar
+ * por um instante), o cursor fica onde estava e o próximo poll tenta de novo esse
+ * mesmo incidente — reenfileirar é sempre seguro porque notificarAlerta já pula
+ * quem já recebeu (ver destinatariosJaNotificados), então nunca duplica WhatsApp.
  */
 export async function pollSentinel(tenantId: string): Promise<{ lidos: number; novos: number }> {
   const desde = await cursorSentinel(tenantId);
@@ -45,18 +50,16 @@ export async function pollSentinel(tenantId: string): Promise<{ lidos: number; n
         urlPortal: incidente.urlPortal,
       },
     });
+    if (novo) novos++;
+
+    await enfileirarNotificacao({
+      tenantId,
+      alertaId: alerta.id,
+      severidade,
+      detectadoEmIso: alerta.detectado_em.toISOString(),
+    });
 
     await salvarCursorSentinel(tenantId, incidente.modificadoEm);
-
-    if (novo) {
-      novos++;
-      await enfileirarNotificacao({
-        tenantId,
-        alertaId: alerta.id,
-        severidade,
-        detectadoEmIso: alerta.detectado_em.toISOString(),
-      });
-    }
   }
 
   logger.info("poll do Sentinel concluído", { tenantId, lidos: incidentes.length, novos });
@@ -108,6 +111,13 @@ export async function scanAnomalia(input: {
   return { analisado: true, alertou };
 }
 
+/**
+ * Persiste o alerta de anomalia e enfileira a notificação incondicionalmente — não só
+ * quando `novo`. Se o enfileiramento falhasse e ficasse condicionado a `novo`, um retry
+ * do scan encontraria o alerta já salvo (`novo: false`) e nunca mais tentaria notificar
+ * ninguém. Reenfileirar um alerta já totalmente entregue é seguro (idempotente via
+ * destinatariosJaNotificados em notificarAlerta).
+ */
 async function registrarAlertaDeAnomalia(input: {
   tenant: Tenant;
   contexto: ContextoAnomalia;
@@ -140,13 +150,11 @@ async function registrarAlertaDeAnomalia(input: {
     },
   });
 
-  if (!novo) return false;
-
   await enfileirarNotificacao({
     tenantId: tenant.id,
     alertaId: alerta.id,
     severidade,
     detectadoEmIso: alerta.detectado_em.toISOString(),
   });
-  return true;
+  return novo;
 }

@@ -60,8 +60,16 @@ export async function marcarFonteConectada(fonteId: string, ocorridoEm: Date): P
   );
 }
 
-export async function marcarFonteErro(fonteId: string, erro: string): Promise<void> {
-  await query(`UPDATE fontes_log SET status = 'erro', ultimo_erro = $2 WHERE id = $1`, [fonteId, erro.slice(0, 500)]);
+/**
+ * Registra falha no encaminhamento pro Sentinel sem derrubar o status da fonte.
+ * A ingestão local funcionou (por isso já está 'conectada') — Sentinel fora do ar
+ * ou ainda não provisionado é um problema à parte, não motivo pra fonte parecer quebrada.
+ */
+export async function registrarErroEncaminhamento(fonteId: string, erro: string): Promise<void> {
+  await query(`UPDATE fontes_log SET ultimo_erro = $2 WHERE id = $1 AND status != 'erro'`, [
+    fonteId,
+    erro.slice(0, 500),
+  ]);
 }
 
 export async function salvarEventos(eventos: EventoLog[]): Promise<number> {

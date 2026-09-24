@@ -53,6 +53,11 @@ function baseUrl(): string {
 /**
  * Lista incidentes modificados depois do cursor, do mais antigo pro mais novo.
  * Ordenar por lastModifiedTimeUtc é o que permite avançar o cursor sem pular incidente.
+ *
+ * Não segue `nextLink`: se mais de `limite` incidentes forem modificados no mesmo
+ * ciclo de poll, o excedente só é lido no próximo poll (o cursor não pula, apenas
+ * atrasa). Para o volume esperado do piloto isso é inofensivo; se um tenant crescer
+ * a ponto de gerar dezenas de incidentes por minuto, paginar aqui vira prioridade.
  */
 export async function listarIncidentes(desde: Date | null, limite = 50): Promise<IncidenteSentinel[]> {
   const token = await obterToken(SCOPE.management);

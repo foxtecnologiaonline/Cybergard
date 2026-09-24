@@ -1,7 +1,12 @@
 import { z } from "zod";
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
-import { autenticarFontePorToken, marcarFonteConectada, marcarFonteErro, salvarEventos } from "@/repositories/fontes-log";
+import {
+  autenticarFontePorToken,
+  marcarFonteConectada,
+  registrarErroEncaminhamento,
+  salvarEventos,
+} from "@/repositories/fontes-log";
 import { consolidarMetricasDaJanela } from "@/repositories/alertas";
 import { enviarParaSentinel } from "@/azure/logs-ingestion";
 import type { EventoLog, FonteLog } from "@/domain/types";
@@ -74,7 +79,7 @@ export async function ingerirLote(input: {
     encaminhados = true;
   } catch (error) {
     const mensagem = error instanceof Error ? error.message : String(error);
-    await marcarFonteErro(fonte.id, mensagem);
+    await registrarErroEncaminhamento(fonte.id, mensagem);
     logger.error("falha ao encaminhar eventos ao Sentinel", { fonteId: fonte.id, error: mensagem });
   }
 

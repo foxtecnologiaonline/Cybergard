@@ -15,6 +15,8 @@ export interface MensagemAlerta {
   acaoRecomendada: string;
   detectadoEm: Date;
   urlAlerta: string;
+  /** Fuso do tenant — o mesmo usado pra classificar "fora do horário comercial". */
+  fusoHorario: string;
 }
 
 interface RespostaEnvio {
@@ -27,7 +29,7 @@ interface RespostaEnvio {
  */
 export function parametrosTemplate(mensagem: MensagemAlerta): string[] {
   const horario = new Intl.DateTimeFormat("pt-BR", {
-    timeZone: "America/Sao_Paulo",
+    timeZone: mensagem.fusoHorario,
     dateStyle: "short",
     timeStyle: "short",
   }).format(mensagem.detectadoEm);

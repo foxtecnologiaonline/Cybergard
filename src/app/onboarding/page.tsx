@@ -8,6 +8,7 @@ interface Fonte {
   nome: string;
   status: string;
   ultimo_evento_em: string | null;
+  ultimo_erro: string | null;
 }
 
 const TIPOS = [
@@ -127,6 +128,11 @@ export default function Onboarding() {
                 <div style={{ fontSize: 13, color: "var(--texto-suave)" }}>
                   {fonte.ultimo_evento_em ? `Último evento: ${new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(fonte.ultimo_evento_em))}` : "Aguardando primeiro evento"}
                 </div>
+                {fonte.status !== "erro" && fonte.ultimo_erro && (
+                  <div style={{ fontSize: 12, color: "var(--atencao)", marginTop: 2 }}>
+                    Encaminhamento ao Sentinel pendente: {fonte.ultimo_erro}
+                  </div>
+                )}
               </div>
               <span className={`etiqueta ${fonte.status === "conectada" ? "informativo" : fonte.status === "erro" ? "critico" : "atencao"}`}>
                 {fonte.status}

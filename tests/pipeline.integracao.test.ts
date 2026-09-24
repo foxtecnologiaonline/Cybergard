@@ -91,6 +91,38 @@ describe("ingestão de log", () => {
     expect(listadas[0]?.status).toBe("conectada");
   });
 
+  it("mantém a fonte 'conectada' quando só o encaminhamento ao Sentinel falha", async () => {
+    const tenant = await criarTenantComDestinatario();
+    const { tokenIngest } = await fontes.criarFonteLog({
+      tenantId: tenant.id,
+      tipo: "painel_admin",
+      nome: "Painel sem Sentinel configurado",
+    });
+
+    // Simula o estado real do piloto antes do provisionamento da Azure: DCE ausente.
+    const dceOriginal = process.env.AZURE_DCE_ENDPOINT;
+    process.env.AZURE_DCE_ENDPOINT = "";
+    const { resetEnvCache } = await import("@/lib/env");
+    resetEnvCache();
+
+    try {
+      const resultado = await ingestao.ingerirLote({
+        token: tokenIngest,
+        eventos: [{ ocorridoEm: new Date().toISOString(), tipoEvento: "login", payload: {} }],
+      });
+
+      expect(resultado.persistidos).toBe(1);
+      expect(resultado.encaminhados).toBe(false);
+
+      const [listada] = await fontes.listarFontes(tenant.id);
+      expect(listada?.status).toBe("conectada");
+      expect(listada?.ultimo_erro).toContain("Ingestão não configurada");
+    } finally {
+      process.env.AZURE_DCE_ENDPOINT = dceOriginal;
+      resetEnvCache();
+    }
+  });
+
   it("recusa token de ingestão inválido", async () => {
     await expect(
       ingestao.ingerirLote({

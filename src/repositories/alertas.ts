@@ -117,6 +117,15 @@ export async function resumoMensal(tenantId: string, desde: Date): Promise<Resum
   };
 }
 
+/** Destinatários que já receberam este alerta com sucesso — usado pra retry não duplicar envio. */
+export async function destinatariosJaNotificados(alertaId: string): Promise<Set<string>> {
+  const rows = await query<{ destinatario_id: string }>(
+    `SELECT destinatario_id FROM notificacoes WHERE alerta_id = $1 AND status IN ('enviada', 'entregue', 'lida')`,
+    [alertaId],
+  );
+  return new Set(rows.map((r) => r.destinatario_id));
+}
+
 export async function registrarNotificacao(input: {
   tenantId: string;
   alertaId: string;

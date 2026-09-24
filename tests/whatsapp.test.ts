@@ -17,6 +17,7 @@ describe("mensagem de alerta no WhatsApp", () => {
       acaoRecomendada: "Troque a senha das contas de administrador.",
       detectadoEm: new Date("2026-09-22T15:30:00Z"),
       urlAlerta: "https://app.cybergard.com.br/alertas/abc",
+      fusoHorario: "America/Sao_Paulo",
     });
 
     expect(params).toHaveLength(5);
@@ -33,9 +34,34 @@ describe("mensagem de alerta no WhatsApp", () => {
       acaoRecomendada: "a".repeat(900),
       detectadoEm: new Date(),
       urlAlerta: "https://x/y",
+      fusoHorario: "America/Sao_Paulo",
     });
     expect(params[1]!.length).toBe(120);
     expect(params[3]!.length).toBe(300);
+  });
+
+  it("usa o fuso horário do tenant, não um fixo", () => {
+    // 02:00 UTC = 23:00 (dia anterior) em São Paulo, mas 11:00 em Tóquio.
+    const instante = new Date("2026-09-22T02:00:00Z");
+    const emSaoPaulo = parametrosTemplate({
+      telefoneE164: "5511999999999",
+      severidade: "informativo",
+      titulo: "Teste",
+      acaoRecomendada: "Nenhuma.",
+      detectadoEm: instante,
+      urlAlerta: "https://x/y",
+      fusoHorario: "America/Sao_Paulo",
+    });
+    const emToquio = parametrosTemplate({
+      telefoneE164: "5511999999999",
+      severidade: "informativo",
+      titulo: "Teste",
+      acaoRecomendada: "Nenhuma.",
+      detectadoEm: instante,
+      urlAlerta: "https://x/y",
+      fusoHorario: "Asia/Tokyo",
+    });
+    expect(emSaoPaulo[2]).not.toBe(emToquio[2]);
   });
 });
 
