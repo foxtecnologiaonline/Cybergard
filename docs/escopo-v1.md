@@ -77,3 +77,10 @@ Horário comercial é por tenant (fuso e janela configuráveis), avaliado no fus
 3. **Piloto**: definir com o primeiro cliente quais fontes de log entram e qual a janela de horário comercial.
 
 > Observação técnica: a Microsoft anunciou aposentadoria do Azure AI Anomaly Detector. A detecção está isolada em `src/azure/anomaly-detector.ts` atrás de uma interface própria, então trocar o motor (por outro serviço ou por detecção estatística local) não toca no resto do pipeline.
+
+## Dívida técnica conhecida
+
+- **Vulnerabilidades do `npm audit` em `next` (postcss).** Duas vulnerabilidades (alta severidade) só têm correção via `next@16.x`, uma major com breaking changes. Não fizemos o upgrade às cegas nesta sessão — validar app inteiro contra o Next 16 antes de subir é trabalho à parte. As demais vulnerabilidades apontadas pelo audit (vitest/esbuild/vite) são só de tooling de teste: não entram nas imagens de produção (`worker`/`migrate` usam `npm ci --omit=dev`, ver `Dockerfile`).
+- **Imagens `worker`/`migrate` ainda carregam o Next.js no `node_modules`** mesmo sem importar seu código (só `dependencies` são instaladas, e `next` é uma delas). Eliminar isso de vez exigiria separar o worker num `package.json` próprio (ou workspace) — módulo maior que não coube nesta rodada de otimização.
+- **Sentinel sem paginação** (`src/azure/sentinel.ts`): mais de 50 incidentes modificados no mesmo ciclo de poll só são lidos no poll seguinte. Documentado no código; inofensivo na escala do piloto.
+- **Sessão sem revogação server-side**: logout limpa o cookie do navegador, mas o token HMAC continua válido até expirar (7 dias) se for capturado antes. Aceitável para piloto único; para múltiplos tenants ativos, vale uma lista de revogação no Redis.
